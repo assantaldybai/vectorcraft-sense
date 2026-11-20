@@ -105,20 +105,20 @@ We are actively recruiting:
   - *Global Color Physics* (live palette propagation without nested Recolor Artwork labyrinths).
 
 💬 **Get Involved:**
-* Open an [RFC Discussion](https://github.com/assantaldybai/vectorcraft/discussions) for new predictive interaction paradigms.
-* Report friction and edge cases in [GitHub Issues](https://github.com/assantaldybai/vectorcraft/issues).
-* Submit [Pull Requests](https://github.com/assantaldybai/vectorcraft/pulls) — clean-room, tested, zero-panic Rust.
+* Open an [RFC Discussion](https://github.com/assantaldybai/vectorcraft-sense/discussions) for new predictive interaction paradigms.
+* Report friction and edge cases in [GitHub Issues](https://github.com/assantaldybai/vectorcraft-sense/issues).
+* Submit [Pull Requests](https://github.com/assantaldybai/vectorcraft-sense/pulls) — clean-room, tested, zero-panic Rust.
 
 ---
 
 ## Getting Started 📦
 
 ### macOS
-* **macOS DMG:** Pre-built disk image for macOS (`Apple Silicon` & `Intel x86_64`) available in [Releases](https://github.com/assantaldybai/vectorcraft/releases).
+* **macOS DMG:** Pre-built disk image for macOS (`Apple Silicon` & `Intel x86_64`) available in [Releases](https://github.com/assantaldybai/vectorcraft-sense/releases).
 * Full support for macOS native menus, Metal GPU rendering, Retina displays, and trackpad gestures.
 
 ### Windows
-* **MSI Installer:** Download Windows installer from [Releases](https://github.com/assantaldybai/vectorcraft/releases) (per-machine or per-user setup with Start Menu & desktop integration).
+* **MSI Installer:** Download Windows installer from [Releases](https://github.com/assantaldybai/vectorcraft-sense/releases) (per-machine or per-user setup with Start Menu & desktop integration).
 * **Portable ZIP:** Extract and run `vectorcraft.exe` anywhere (settings stored locally next to binary).
 
 ### Linux & FreeBSD
@@ -132,8 +132,8 @@ Requirements: Modern Rust toolchain (`rustc >= 1.85`).
 
 ```bash
 # Clone the repository
-git clone https://github.com/assantaldybai/vectorcraft.git
-cd vectorcraft
+git clone https://github.com/assantaldybai/vectorcraft-sense.git
+cd vectorcraft-sense
 
 # Run native release build
 cargo run --release -p vectorcraft
