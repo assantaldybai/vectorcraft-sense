@@ -21,14 +21,16 @@
   <a href="#the-manifesto">The Manifesto</a> •
   <a href="#the-8-pillars-of-sense-edition">Core Features</a> •
   <a href="#comparison-matrix">Vs. Legacy Monopolies</a> •
-  <a href="#community-roadmap">Community & Roadmap</a> •
+  <a href="#community-and-roadmap">Community & Roadmap</a> •
   <a href="#getting-started">Installation</a> •
   <a href="#build-from-source">Build from Source</a>
 </p>
 
 ---
 
-## 💥 The Manifesto: Vector Illustration Was Abandoned in 1987
+## The Manifesto 💥
+
+### Vector Illustration Was Abandoned in 1987
 
 For nearly four decades, the vector illustration industry has been held hostage by a \$60/month monopoly. The core paradigm hasn't changed since the 1990s:
 
@@ -42,7 +44,7 @@ For nearly four decades, the vector illustration industry has been held hostage 
 
 ---
 
-## ⚡ The 8 Pillars of Sense Edition
+## The 8 Pillars of Sense Edition ⚡
 
 ### 1. 🔮 Predictive Pathfinder (Zero-Click Booleans)
 Hover over *Unite*, *Minus Front*, *Intersect*, or *Exclude* in the Pathfinder palette — the canvas instantly calculates and renders the live boolean topology in real-time. Move the cursor away, and your original curves restore seamlessly. One click commits. No more trial-and-error undo loops.
@@ -72,7 +74,7 @@ Written from scratch in clean-room Rust. No Electron bloat, no garbage collectio
 
 ---
 
-## 🥊 Comparison Matrix
+## Comparison Matrix 🥊
 
 | Capability | Adobe Illustrator | Inkscape | Figma | **VectorCraft: Sense Edition** |
 |:---|:---:|:---:|:---:|:---:|
@@ -88,7 +90,9 @@ Written from scratch in clean-room Rust. No Electron bloat, no garbage collectio
 
 ---
 
-## 🤝 Community & Roadmap: Build the Future of Vector UX
+## Community and Roadmap 🤝
+
+### Build the Future of Vector UX
 
 **VectorCraft: Sense Edition** is an independent community initiative dedicated to building the most intuitive, predictive vector tool on earth. 
 
@@ -101,28 +105,28 @@ We are actively recruiting:
   - *Global Color Physics* (live palette propagation without nested Recolor Artwork labyrinths).
 
 💬 **Get Involved:**
-* Open an **RFC Discussion** for new predictive interaction paradigms.
-* Report friction and edge cases in **GitHub Issues**.
-* Submit PRs — clean-room, tested, zero-panic Rust.
+* Open an [RFC Discussion](https://github.com/assantaldybai/vectorcraft/discussions) for new predictive interaction paradigms.
+* Report friction and edge cases in [GitHub Issues](https://github.com/assantaldybai/vectorcraft/issues).
+* Submit [Pull Requests](https://github.com/assantaldybai/vectorcraft/pulls) — clean-room, tested, zero-panic Rust.
 
 ---
 
-## 📦 Getting Started
-
-### Windows
-* **MSI Installer:** Download `vectorcraft-sense-windows-x64.msi` from Releases (per-machine or per-user setup with Start Menu & desktop integration).
-* **Portable ZIP:** Extract and run `vectorcraft.exe` anywhere (settings stored locally next to binary).
+## Getting Started 📦
 
 ### macOS
-* Native universal binary for Apple Silicon (`aarch64`) and Intel (`x86_64`).
-* Full support for macOS native menus, Metal GPU rendering, and Retina displays.
+* **macOS DMG:** Pre-built disk image for macOS (`Apple Silicon` & `Intel x86_64`) available in [Releases](https://github.com/assantaldybai/vectorcraft/releases).
+* Full support for macOS native menus, Metal GPU rendering, Retina displays, and trackpad gestures.
+
+### Windows
+* **MSI Installer:** Download Windows installer from [Releases](https://github.com/assantaldybai/vectorcraft/releases) (per-machine or per-user setup with Start Menu & desktop integration).
+* **Portable ZIP:** Extract and run `vectorcraft.exe` anywhere (settings stored locally next to binary).
 
 ### Linux & FreeBSD
 * Native Wayland & X11 builds with full stylus pressure, tilt, and barrel button support.
 
 ---
 
-## 🛠️ Build from Source
+## Build from Source 🛠️
 
 Requirements: Modern Rust toolchain (`rustc >= 1.85`).
 
