@@ -1,6 +1,6 @@
 # Control protocol
 
-> **Last updated:** 2026-11-19 · **Change:** #5804 native-picked raster editor merged with main; scores and estimates unchanged; previously: completed the `ui.resize` and `ui.focus` entries and removed a duplicate `ui.render` row; previously: text style commands take a feature with a value (`"features": ["salt=2"]`), the font's alternate number, and shape runs that differ only in features as one piece of text; previously: Confining file access refuses a `:` in a name after the drive on Windows, an NTFS alternate data stream such as `x.svg:evil` (#3604); previously: Object → Expand… dimmed while the selection has an appearance Expand Appearance expands (`object.expand.info`'s `appearance`, #3089); previously: brush library panels (`window.brushLibrary`, `window.brushLibrary.other`, `ui.saveBrushLibrary`); previously: Transform Each opens on the values it was last confirmed with; its Copy button confirms with `copy: true` (#1732); previously: panel docking on craft-ui's layout: `ui.docking`, the parameters of `window.panel.float` and `window.panel.dock`; previously: `ui.screenshot`'s 64 MiB inline-PNG cap and its path-plus-data downgrade; symbol library panels (`window.symbolLibrary`, `window.symbolLibrary.other`, `ui.saveSymbolLibrary`); synthetic input budgets (#1709); bounded transport waits (#1726).
+> **Last updated:** 2026-11-20 · **Change:** `ui.docking` distinguishes hover-opened flyout folding from click-opened auto-collapse; #5804 native-picked raster editor merged with main; scores and estimates unchanged; previously: completed the `ui.resize` and `ui.focus` entries and removed a duplicate `ui.render` row; previously: text style commands take a feature with a value (`"features": ["salt=2"]`), the font's alternate number, and shape runs that differ only in features as one piece of text; previously: Confining file access refuses a `:` in a name after the drive on Windows, an NTFS alternate data stream such as `x.svg:evil` (#3604); previously: Object → Expand… dimmed while the selection has an appearance Expand Appearance expands (`object.expand.info`'s `appearance`, #3089); previously: brush library panels (`window.brushLibrary`, `window.brushLibrary.other`, `ui.saveBrushLibrary`); previously: Transform Each opens on the values it was last confirmed with; its Copy button confirms with `copy: true` (#1732); previously: panel docking on craft-ui's layout: `ui.docking`, the parameters of `window.panel.float` and `window.panel.dock`; previously: `ui.screenshot`'s 64 MiB inline-PNG cap and its path-plus-data downgrade; symbol library panels (`window.symbolLibrary`, `window.symbolLibrary.other`, `ui.saveSymbolLibrary`); synthetic input budgets (#1709); bounded transport waits (#1726).
 
 `vectorcraft --control <port>` listens on `127.0.0.1:<port>` (loopback only). The port must be a number
 from 1 to 65535 (`--control=<port>` works too), given once; otherwise the app prints an error and exits
@@ -1192,7 +1192,7 @@ geometry or destinations, and stale split paths return an error and leave the la
 - `layout`: the layout in use; `customized`: whether the workspace has a saved layout; `hidden`: the hidden panels
   with a remembered place.
 - `flyout`: the panel open as a flyout from an icon column; `focused`: the panel the user last clicked or pressed
-  in; `autoCollapse`: flyouts close on a press outside them; `panelsShown`: false while Tab or a full screen mode
+  in; `autoCollapse`: click-opened flyouts close on a press outside them; hover-opened flyouts fold after the pointer leaves; `panelsShown`: false while Tab or a full screen mode
   hides the panels.
 - `hitRects`: `[{hit, rect}]`, every docking control the main window drew last frame (tabs, drag bars, borders,
   column bars, » buttons, icons, icon grips, floating title bars and close buttons, resize edges, dividers) as a
@@ -1244,6 +1244,7 @@ hidden tab (whose frames the browser pauses) answers when it is shown again.
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-11-20 | minor | Documented hover-opened icon flyouts folding after pointer exit and click-opened flyouts following `autoCollapse`; response fields unchanged. |
 | 2026-11-15 | minor | Completed the `ui.resize` defaults and `ui.focus` contract; kept one `ui.render` entry, including `traceViews`. Documentation only. |
 | 2026-11-07 | minor | Documented OpenType feature values in text commands (`"salt=2"`, the font's alternate number) and that runs differing only in features shape as one piece of text. |
 | 2026-10-31 | minor | Confining file access: on Windows a `:` in a name after the drive (an NTFS alternate data stream) is refused with the device names (#3604). |

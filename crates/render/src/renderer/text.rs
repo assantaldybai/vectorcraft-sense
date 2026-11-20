@@ -546,7 +546,7 @@ impl Renderer {
                         ctx.pop_layer();
                     }
                 }
-                AppearanceItem::Stroke(st) if st.width > 0.0 => {
+                AppearanceItem::Stroke(st) if st.width >= 0.0 => {
                     if st.brush.is_none() || !self.draw_brush(ctx, f, n, all, st) {
                         self.draw_stroke(ctx, f, Affine::IDENTITY, all, FillRule::NonZero, st, None, tb);
                     }
@@ -653,7 +653,7 @@ const MAX_TYPE_PAINTS: usize = 8;
 /// take the method too. Paints that draw nothing are left out. `None` for type with more than
 /// [`MAX_TYPE_PAINTS`] groups, which is drawn as one.
 fn type_paints(n: &Node, t: &TextObject, g: &TextGeom, opaque: bool) -> Option<Vec<Vec<TypePaint>>> {
-    let shown = |i: &AppearanceItem| i.visible() && !i.paint().is_none() && !matches!(i, AppearanceItem::Stroke(st) if st.width <= 0.0);
+    let shown = |i: &AppearanceItem| i.visible() && !i.paint().is_none() && !matches!(i, AppearanceItem::Stroke(st) if st.width < 0.0);
     let items = &n.appearance.items;
     let k = n.appearance.contents_at();
     let mut groups: Vec<Vec<TypePaint>> = (0..k).filter(|j| shown(&items[*j])).map(|j| vec![TypePaint::Item(j)]).collect();

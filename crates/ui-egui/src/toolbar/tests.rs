@@ -12,12 +12,12 @@ fn frame(app: &mut VectorcraftApp, ctx: &egui::Context, time: f64, events: Vec<E
 
 /// [`frame`] in a window `height` points tall.
 fn frame_in(app: &mut VectorcraftApp, ctx: &egui::Context, time: f64, events: Vec<Event>, height: f32) -> Vec<egui::Rect> {
-    let input = egui::RawInput {
-        time: Some(time),
-        events,
-        screen_rect: Some(egui::Rect::from_min_size(Pos2::ZERO, vec2(400.0, height))),
-        ..Default::default()
-    };
+    frame_on_screen(app, ctx, time, events, vec2(400.0, height))
+}
+
+/// [`frame`] on a window size chosen by a layout regression.
+fn frame_on_screen(app: &mut VectorcraftApp, ctx: &egui::Context, time: f64, events: Vec<Event>, size: egui::Vec2) -> Vec<egui::Rect> {
+    let input = egui::RawInput { time: Some(time), events, screen_rect: Some(egui::Rect::from_min_size(Pos2::ZERO, size)), ..Default::default() };
     let mut out = ctx.run_ui(input, |ui| show(app, ui));
     out.textures_delta.clear();
     widget_rects(ctx, vec2(36.0, PITCH - 1.0))
@@ -511,6 +511,76 @@ fn right_clicking_a_tool_group_opens_its_flyout() {
     frame(&mut app, &ctx, 4.0, vec![Event::PointerMoved(away), c(true)]);
     frame(&mut app, &ctx, 4.05, vec![c(false)]);
     assert_eq!((app.session.tool_id(), app.ui.flyout), ("roundedRectangle", None));
+}
+
+#[test]
+fn tool_flyout_slides_and_fades_in_over_the_ui_animation_time() {
+    let mut app = VectorcraftApp::new(Session::new(), Default::default());
+    app.run("file.new", json!({"width": 300, "height": 300})).unwrap();
+    let ctx = egui::Context::default();
+    let at = shapes_button(&mut app, &ctx).center();
+    let animation = egui::Id::unique("tool-flyout-animation");
+    ctx.animate_bool_responsive(animation, false);
+    let button = |pressed| Event::PointerButton { pos: at, button: PointerButton::Secondary, pressed, modifiers: Default::default() };
+    let screen = vec2(1000.0, 1200.0);
+    frame_on_screen(&mut app, &ctx, 0.016, vec![], screen);
+    frame_on_screen(&mut app, &ctx, 0.032, vec![Event::PointerMoved(at), button(true)], screen);
+    frame_on_screen(&mut app, &ctx, 0.048, vec![button(false)], screen);
+    assert!(app.ui.flyout.is_some());
+    let first = ctx.memory(|m| m.area_rect(egui::Id::unique("tool-flyout"))).expect("the flyout is drawn");
+    let anchor = ctx.data(|d| d.get_temp::<egui::Rect>(egui::Id::unique("flyout-anchor"))).expect("the anchor is retained");
+    frame_on_screen(&mut app, &ctx, 0.064, vec![], screen);
+    let middle = ctx.memory(|m| m.area_rect(egui::Id::unique("tool-flyout"))).expect("the flyout remains drawn");
+    let anchor_distance = |rect: egui::Rect| (rect.center().x - anchor.center().x).abs();
+    assert!(
+        anchor_distance(middle) > anchor_distance(first),
+        "the flyout moves away from its anchor: first={first:?} middle={middle:?} anchor={anchor:?}, animation_time={:?}",
+        ctx.global_style().animation_time
+    );
+    let mut time = 0.08;
+    let end = time + f64::from(ctx.global_style().animation_time) + 0.05;
+    while time <= end {
+        frame_on_screen(&mut app, &ctx, time, vec![], screen);
+        time += 0.05;
+    }
+    let final_rect = ctx.memory(|m| m.area_rect(egui::Id::unique("tool-flyout"))).expect("the flyout remains open");
+    assert!(anchor_distance(final_rect) > anchor_distance(middle), "the slide reaches its final position");
+    let away = Pos2::new(600.0, 1000.0);
+    let click = |pressed| Event::PointerButton { pos: away, button: PointerButton::Primary, pressed, modifiers: Default::default() };
+    frame_on_screen(&mut app, &ctx, end + 0.05, vec![Event::PointerMoved(away), click(true)], screen);
+    let close_time = end + 0.10;
+    frame_on_screen(&mut app, &ctx, close_time, vec![click(false)], screen);
+    assert!(app.ui.flyout.is_none(), "clicking elsewhere starts the close transition");
+    frame_on_screen(&mut app, &ctx, close_time + 0.05, vec![], screen);
+    let closing = ctx.memory(|m| m.area_rect(egui::Id::unique("tool-flyout"))).expect("the closing flyout remains drawn");
+    assert!(anchor_distance(closing) < anchor_distance(final_rect), "the close transition slides back toward its anchor");
+    let closed_at = close_time + f64::from(ctx.global_style().animation_time) + 0.10;
+    let mut hide_time = close_time + 0.10;
+    while hide_time <= closed_at {
+        frame_on_screen(&mut app, &ctx, hide_time, vec![], screen);
+        hide_time += 0.05;
+    }
+    let closed = ctx.memory(|m| m.area_rect(egui::Id::unique("tool-flyout"))).expect("egui retains the area position after it closes");
+    assert!(anchor_distance(closed) < anchor_distance(closing), "the close transition reaches its starting position");
+}
+
+#[test]
+fn predictive_flyout_opens_from_the_canvas_side_of_a_right_docked_toolbar() {
+    let mut app = VectorcraftApp::new(Session::new(), Default::default());
+    app.run("file.new", json!({"width": 300, "height": 300})).unwrap();
+    app.ui.toolbar_right = true;
+    let ctx = egui::Context::default();
+    let buttons = frame(&mut app, &ctx, 0.0, vec![]);
+    let group = buttons[1]; // Direct Selection and Group Selection.
+    for (frame_no, offset) in [100.0, 70.0, 40.0, 10.0].into_iter().enumerate() {
+        let x = group.left() - offset;
+        frame(&mut app, &ctx, 0.05 * (frame_no as f64 + 1.0), vec![Event::PointerMoved(Pos2::new(x, group.center().y))]);
+    }
+    assert!(app.ui.flyout.is_some(), "moving right from the canvas predicts the right-docked toolbar group");
+    let menu = ctx.memory(|m| m.area_rect(egui::Id::unique("tool-flyout"))).expect("the predicted flyout is drawn");
+    let retreat = Pos2::new(menu.left() - FLYOUT_RETREAT_MARGIN - 10.0, group.center().y);
+    frame(&mut app, &ctx, 0.25, vec![Event::PointerMoved(retreat)]);
+    assert!(app.ui.flyout.is_none(), "moving back toward the canvas closes a right-docked flyout");
 }
 
 /// The Shapes group's button (Selection, Direct Selection, Lasso, then Rectangle).

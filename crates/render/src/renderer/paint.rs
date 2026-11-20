@@ -61,7 +61,7 @@ impl Renderer {
                     }
                 }
                 AppearanceItem::Stroke(st) => {
-                    if !st.visible || st.paint.is_none() || st.width <= 0.0 {
+                    if !st.visible || st.paint.is_none() || st.width < 0.0 {
                         continue;
                     }
                     if st.brush.is_some() && self.draw_brush(ctx, f, n, bp, st) {
@@ -130,18 +130,24 @@ impl Renderer {
         }
         ctx.set_transform(f.view * xf);
         let closed = effects::stroke::is_closed(bp);
-        // Keep hairlines visible when zoomed far out (at least ~1 device pixel). A width profile
-        // multiplies the weight, so it is the profile's widest point that is kept visible: raising
-        // the weight further would swell the whole stroke while the view zooms out (#995).
-        let widest = st.profile.as_ref().map_or(1.0, |p| p.widest().max(1e-3));
-        let width = effects::stroke::aligned_width(st, closed).max(f.px * 0.5 / xf.determinant().abs().sqrt().max(1e-9) / widest);
+        let scale = xf.determinant().abs().sqrt().max(1e-9);
+        // FreeHand / PostScript hairline: when st.width == 0.0, it is always drawn as exactly
+        // 1 device pixel regardless of zoom. A regular stroke is clamped to at least 0.5-1 device px
+        // when zoomed far out so it doesn't vanish (#995).
+        let width = if st.width == 0.0 {
+            f.px / scale
+        } else {
+            let widest = st.profile.as_ref().map_or(1.0, |p| p.widest().max(1e-3));
+            effects::stroke::aligned_width(st, closed).max(f.px * 0.5 / scale / widest)
+        };
         let inside = st.align == StrokeAlign::Inside && closed;
         if inside {
             ctx.set_fill_rule(fill_rule(rule));
             ctx.push_clip_layer(bp);
         }
         // One paint box for the line and the heads, so a gradient runs on into the heads.
-        let paint_bounds = bounds.inflate(st.width / 2.0, st.width / 2.0);
+        let eff_w = if st.width == 0.0 { width } else { st.width };
+        let paint_bounds = bounds.inflate(eff_w / 2.0, eff_w / 2.0);
         // A width profile's outline is fitted through samples, and fitted again differently when
         // it is outlined near the view only: its curves are drawn as they are.
         let fine = st.profile.is_none() && crate::stroke::fine(f.view * xf, f.px);

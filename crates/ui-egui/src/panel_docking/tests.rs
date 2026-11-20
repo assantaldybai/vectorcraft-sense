@@ -144,6 +144,63 @@ fn an_icon_opens_its_flyout_and_open_panel_follows() {
     assert_eq!(craft_ui::docking::flyout::<String>(&h.ctx, area_id()), None);
 }
 
+#[test]
+fn icon_flyout_opens_after_a_projected_approach_from_the_canvas() {
+    let mut h = Harness::new();
+    let icon = h.hit(&Hit::Icon("swatches".into())).expect("the right dock's icon");
+    let y = icon.center().y;
+    // The wider trajectory window opens the flyout while the pointer is still about 200 pt away.
+    h.frame(vec![Event::PointerMoved(pos2(icon.left() - 300.0, y))]);
+    h.frame(vec![Event::PointerMoved(pos2(icon.left() - 270.0, y))]);
+    h.frame(vec![Event::PointerMoved(pos2(icon.left() - 240.0, y))]);
+    h.frame(vec![Event::PointerMoved(pos2(icon.left() - 210.0, y))]);
+    assert_eq!(h.app.ui.open_panel.as_deref(), Some("swatches"));
+    assert!(h.app.dock_rt.hover_flyout.is_some(), "predictive opening is transient until the pointer reaches it");
+}
+
+#[test]
+fn a_hover_opened_flyout_folds_smoothly_after_the_pointer_leaves() {
+    let mut h = Harness::new();
+    let icon = h.hit(&Hit::Icon("swatches".into())).expect("the right dock's icon");
+    let y = icon.center().y;
+    h.frame(vec![Event::PointerMoved(pos2(icon.left() - 300.0, y))]);
+    h.frame(vec![Event::PointerMoved(pos2(icon.left() - 270.0, y))]);
+    h.frame(vec![Event::PointerMoved(pos2(icon.left() - 240.0, y))]);
+    h.frame(vec![Event::PointerMoved(pos2(icon.left() - 210.0, y))]);
+    assert_eq!(h.app.ui.open_panel.as_deref(), Some("swatches"));
+    h.frame(vec![]);
+    let flyout = h.ctx.memory(|memory| memory.area_rect(area_id().with("flyout"))).expect("the flyout is drawn");
+    h.frame(vec![Event::PointerMoved(flyout.center())]);
+    wait(&mut h, 0.25);
+    assert_eq!(h.app.ui.open_panel.as_deref(), Some("swatches"), "the pointer holds the flyout open");
+    assert_eq!(h.app.dock_rt.icon_flyout_progress, 1.0, "the reveal finishes at full size");
+
+    let canvas = h.app.canvas_rect.expect("the canvas is drawn");
+    h.frame(vec![Event::PointerMoved(canvas.center())]);
+    wait(&mut h, 0.1);
+    assert_eq!(h.app.ui.open_panel.as_deref(), Some("swatches"), "a short grace lets the pointer return");
+    wait(&mut h, 0.1);
+    assert_eq!(h.app.ui.open_panel.as_deref(), Some("swatches"), "the close animation does not start before the grace expires");
+    wait(&mut h, 0.1);
+    assert_eq!(h.app.ui.open_panel.as_deref(), Some("swatches"), "the flyout remains during its closing animation");
+    assert!(h.app.dock_rt.icon_flyout_progress < 1.0, "the fold animates instead of disappearing");
+    wait(&mut h, f64::from(super::ICON_FLYOUT_ANIMATION) * 1.5);
+    assert!(h.app.ui.open_panel.is_none(), "the hover-opened flyout folds back into its icon");
+}
+
+#[test]
+fn a_click_opened_flyout_stays_open_when_auto_collapse_is_off() {
+    let mut h = Harness::new();
+    assert!(!h.app.session.prefs.auto_collapse_icon_panels);
+    let icon = h.hit(&Hit::Icon("swatches".into())).expect("the right dock's icon");
+    h.click(icon.center());
+    assert_eq!(h.app.ui.open_panel.as_deref(), Some("swatches"));
+    let canvas = h.app.canvas_rect.expect("the canvas is drawn");
+    h.frame(vec![Event::PointerMoved(canvas.center())]);
+    wait(&mut h, 0.5);
+    assert_eq!(h.app.ui.open_panel.as_deref(), Some("swatches"), "explicit flyouts keep the documented preference behavior");
+}
+
 /// #5713: real Glyphs and Artboards bodies must retain a flyout resize through
 /// content fitting, closing/reopening and serialization of the workspace layout.
 #[test]
@@ -529,6 +586,56 @@ fn resting_on_the_right_edge_shows_the_hidden_panels_over_the_canvas_until_the_p
     assert!(h.tab("properties").is_some(), "a short trip away keeps them");
     wait(&mut h, peek::GRACE);
     assert!(h.tab("properties").is_none(), "away from them, they hide again");
+    assert_eq!(inspect(&h.app, &h.ctx)["peek"], Value::Null);
+}
+
+#[test]
+fn predictive_approach_shows_panels_faster_than_resting() {
+    let mut h = Harness::new();
+    let _wide = hide_with_tab(&mut h);
+    // Rapid approach toward the right edge (within PREDICT_ZONE = 120 pt, speed > 200 pt/s).
+    // Send successive pointer moves so egui builds up velocity in pos_history (needs >= 3 samples).
+    let y = 500.0;
+    h.frame(vec![Event::PointerMoved(pos2(SCREEN.right() - 90.0, y))]);
+    h.frame(vec![Event::PointerMoved(pos2(SCREEN.right() - 60.0, y))]);
+    h.frame(vec![Event::PointerMoved(pos2(SCREEN.right() - 35.0, y))]);
+    h.frame(vec![Event::PointerMoved(pos2(SCREEN.right() - 20.0, y))]);
+    // The pointer is at 10 pt from the edge (still outside the 6 pt resting strip).
+    // After PREDICT_DELAY, the panels appear predictively.
+    h.frame(vec![Event::PointerMoved(pos2(SCREEN.right() - 10.0, y))]);
+    assert!(h.tab("properties").is_some(), "fast approach triggers predictive show before reaching edge");
+    assert_eq!(inspect(&h.app, &h.ctx)["peek"], json!("right"));
+    assert!(peek::progress(&h.app) > 0.0, "the panel body begins its eased reveal");
+    let animation_time = f64::from(h.ctx.global_style().animation_time) + 0.05;
+    wait(&mut h, animation_time);
+    assert_eq!(peek::progress(&h.app), 1.0, "the panel body reaches its full width");
+}
+
+#[test]
+fn predictive_retreat_hides_panels_faster_than_grace() {
+    let mut h = Harness::new();
+    let _wide = hide_with_tab(&mut h);
+    // First show the panels by resting.
+    let edge = pos2(SCREEN.right() - 2.0, 500.0);
+    h.frame(vec![Event::PointerMoved(edge)]);
+    wait(&mut h, peek::DELAY * 2.0);
+    let tab = h.tab("properties").expect("resting on edge shows panels");
+    h.frame(vec![Event::PointerMoved(tab.center())]);
+    wait(&mut h, 0.1);
+
+    // Now move continuously back toward the canvas (negative x velocity < -150 pt/s).
+    // The panels extend inward by ~310 pt, so moving into x <= 1200 leaves the panel area.
+    // Moving continuously across the canvas at speed hides the panels while in motion
+    // after REVERSE_GRACE (0.08 s), far faster than the 0.3 s stationary grace period.
+    let y = 500.0;
+    h.frame(vec![Event::PointerMoved(pos2(1200.0, y))]);
+    h.frame(vec![Event::PointerMoved(pos2(1000.0, y))]);
+    h.frame(vec![Event::PointerMoved(pos2(800.0, y))]);
+    assert!(h.tab("properties").is_some(), "the closing animation keeps the panel until it finishes");
+    assert!(peek::progress(&h.app) < 1.0, "the panel body is animating closed");
+    let animation_time = f64::from(h.ctx.global_style().animation_time) + 0.05;
+    wait(&mut h, animation_time);
+    assert!(h.tab("properties").is_none(), "moving decisively into the canvas starts an eased close");
     assert_eq!(inspect(&h.app, &h.ctx)["peek"], Value::Null);
 }
 

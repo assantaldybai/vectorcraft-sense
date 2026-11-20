@@ -378,21 +378,27 @@ impl MoveSnap {
         // axis without one that Smart Guides left free, the bounds line up with the ruler guides
         // (#5746), alongside the Smart Guides.
         if let Some(t) = self.rulers.as_ref().filter(|_| !on_path) {
-            let (adj, ov, held) = t.snap_moved_to_rulers(start + d, self.bounds.map(|b| b + d), cx.snap_tol(), taken);
-            if adj != Vec2::ZERO {
+            let (adj, ov, axes) = t.snap_moved_to_rulers(start + d, self.bounds.map(|b| b + d), cx.snap_tol(), taken);
+            if adj != Vec2::ZERO || !ov.is_empty() || axes.contains(&true) {
                 d += adj;
-                if held {
+                if axes.contains(&true) {
                     guides = ov;
                 } else {
                     guides.extend(ov);
                 }
+                taken[0] |= axes[0] || adj.x != 0.0;
+                taken[1] |= axes[1] || adj.y != 0.0;
             }
         }
         if cx.snaps_to_pixel(PixelOp::Moving)
             && let Some(b) = self.bounds
         {
-            d = Vec2::new((b.x0 + d.x).round() - b.x0, (b.y0 + d.y).round() - b.y0);
-            guides.clear();
+            let nx = if taken[0] { d.x } else { (b.x0 + d.x).round() - b.x0 };
+            let ny = if taken[1] { d.y } else { (b.y0 + d.y).round() - b.y0 };
+            d = Vec2::new(nx, ny);
+            if !taken[0] && !taken[1] {
+                guides.clear();
+            }
         }
         (d, guides)
     }
@@ -441,8 +447,10 @@ impl MoveSnap {
         }
         if let Some(t) = &self.rulers {
             let (q, ov) = t.snap_point_along(start + d, u, cx.snap_tol());
-            if q != start + d {
-                d = q - start;
+            if q != start + d || !ov.is_empty() {
+                if q != start + d {
+                    d = q - start;
+                }
                 guides = ov;
             } else if guides.is_empty()
                 && let Some(b) = self.bounds
@@ -456,6 +464,7 @@ impl MoveSnap {
         }
         if cx.snaps_to_pixel(PixelOp::Moving)
             && let Some(b) = self.bounds
+            && guides.is_empty()
         {
             let at = Point::new(b.x0, b.y0) + d;
             d += u * along(Vec2::new(at.x.round() - at.x, at.y.round() - at.y));

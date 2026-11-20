@@ -682,6 +682,18 @@ fn drawn_points_snap_to_ruler_guides_with_smart_guides_on() {
     assert_eq!(snap.press(&off, Point::new(260.0, 315.0), &[], None), Point::new(260.0, 315.0));
 }
 
+#[test]
+fn an_exact_ruler_guide_keeps_its_fractional_coordinate_with_pixel_snapping() {
+    let (mut d, _) = doc_with_rect();
+    d.add_ruler_guide(&vectorcraft_doc::Guide::new(true, 331.4));
+    let (s, p) = (Selection::default(), paint());
+    let c = ToolContext { snap_to_pixel: true, ..cx(&d, &s, &p) };
+    let mut snap = DrawSnap::default();
+    let at = Point::new(331.4, 260.3);
+    assert_eq!(snap.press(&c, at, &[], None), at, "an exact magnetic target is not pixel-rounded away");
+    assert!(!snap.guides().is_empty(), "the guide overlay remains visible");
+}
+
 /// A drawing tool's snapper reuses its targets while hovering over the same document state, and
 /// gathers them again when it changes, and on every press.
 #[test]

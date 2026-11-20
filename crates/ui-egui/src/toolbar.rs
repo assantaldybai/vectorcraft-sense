@@ -26,6 +26,20 @@ const BAR: f32 = 10.0;
 const CLOSE: f32 = 14.0;
 /// Points the pointer travels on a flyout's bar before the flyout tears off.
 const TEAR: f32 = 3.0;
+/// How far ahead of a grouped tool the pointer can approach before the flyout predicts intent.
+const FLYOUT_PREDICT_REACH: f32 = 70.0;
+/// Minimum horizontal pointer speed toward the toolbar for predictive opening, in points/second.
+const FLYOUT_PREDICT_SPEED: f32 = 20.0;
+/// Vertical tolerance around a tool row for predictive opening.
+const FLYOUT_PREDICT_ROW_MARGIN: f32 = 6.0;
+/// Spacing between the anchor tool and its flyout.
+const FLYOUT_GAP: f32 = 8.0;
+/// Points of safety around the anchor/flyout while the pointer travels between them.
+const FLYOUT_CORRIDOR_PADDING: f32 = 14.0;
+/// How far outside a flyout the pointer must move to begin closing it.
+const FLYOUT_RETREAT_MARGIN: f32 = 25.0;
+/// Minimum pointer speed for a decisive retreat from a flyout.
+const FLYOUT_RETREAT_SPEED: f32 = 40.0;
 /// Seconds a floating flyout flashes when a press that would open its flyout raises it.
 const FLASH: f64 = 0.4;
 /// Size of a tool button in a floating flyout's strip.
@@ -314,17 +328,36 @@ fn body(app: &mut VectorcraftApp, ui: &mut Ui, cols: usize, floating: Option<egu
                     let is_active = slot.contains(&active);
                     let (rect, resp) = ui.allocate_exact_size(metrics.cell, Sense::click_and_drag());
                     crate::palette::note_spot(ui, rect, || crate::palette::SpotAt::Slot(None, slot.iter().map(|s| s.to_string()).collect()));
-                    let well = egui::Rect::from_center_size(rect.center(), metrics.well);
-                    if is_active {
-                        ui.painter().rect_filled(well, CornerRadius::same(6), t.tool_active);
-                    } else if resp.hovered() {
-                        ui.painter().rect_filled(well, CornerRadius::same(6), t.hover);
+
+                    let ptr = ui.input(|i| i.pointer.hover_pos());
+                    let (mag, animating) = match ptr {
+                        Some(p) => {
+                            let dist = p.distance(rect.center());
+                            let reach = 50.0;
+                            if dist < reach {
+                                let f = (1.0 - dist / reach).clamp(0.0, 1.0);
+                                (1.0 + 0.35 * (f * f * (3.0 - 2.0 * f)), true)
+                            } else {
+                                (1.0, false)
+                            }
+                        }
+                        None => (1.0, false),
+                    };
+                    if animating {
+                        ui.ctx().request_repaint();
                     }
-                    let ir = egui::Rect::from_center_size(rect.center(), vec2(18.0, 18.0));
+
+                    let well = egui::Rect::from_center_size(rect.center(), metrics.well * mag);
+                    if is_active {
+                        ui.painter().rect_filled(well, CornerRadius::same((6.0 * mag).round() as u8), t.tool_active);
+                    } else if resp.hovered() {
+                        ui.painter().rect_filled(well, CornerRadius::same((6.0 * mag).round() as u8), t.hover);
+                    }
+                    let ir = egui::Rect::from_center_size(rect.center(), vec2(18.0 * mag, 18.0 * mag));
                     icons::paint(ui, icons::tool_icon(shown.icon), ir, if is_active { t.text_strong } else { t.icon });
                     if slot.len() > 1 {
-                        let c = rect.center() + vec2(12.5, 10.0);
-                        ui.painter().add(egui::Shape::convex_polygon(vec![c, c + vec2(-3.5, 0.0), c + vec2(0.0, -3.5)], t.icon, Stroke::NONE));
+                        let c = rect.center() + vec2(12.5 * mag, 10.0 * mag);
+                        ui.painter().add(egui::Shape::convex_polygon(vec![c, c + vec2(-3.5 * mag, 0.0), c + vec2(0.0, -3.5 * mag)], t.icon, Stroke::NONE));
                     }
                     // A Learn link locating a tool of this slot: the button is marked when it shows
                     // the tool, else the group's flyout opens on it (a strip torn off marks it).
@@ -346,7 +379,25 @@ fn body(app: &mut VectorcraftApp, ui: &mut Ui, cols: usize, floating: Option<egu
                     }
                     let press = if slot.len() > 1 && !editing { flyout_press(ui, &resp, rect) } else { None };
                     let alt = ui.input(|inp| inp.modifiers.alt);
-                    if press.is_some() {
+                    // Predict only when the pointer approaches from the side the flyout opens on.
+                    let (pointer_pos, vel, down, moving) =
+                        ui.input(|i| (i.pointer.hover_pos(), i.pointer.velocity(), i.pointer.any_down(), i.pointer.is_moving()));
+                    let flyout_width = ui.ctx().memory(|m| m.area_rect(egui::Id::unique("tool-flyout")).map_or(160.0, |r| r.width()));
+                    let flyout_x = beside(rect, flyout_width, FLYOUT_GAP, room(app, ui.ctx()));
+                    let opens_right = flyout_x >= rect.right();
+                    let in_approach = pointer_pos.is_some_and(|p| {
+                        let approaching_from = if opens_right {
+                            p.x >= rect.right() && p.x <= rect.right() + FLYOUT_PREDICT_REACH && vel.x < -FLYOUT_PREDICT_SPEED
+                        } else {
+                            p.x <= rect.left() && p.x >= rect.left() - FLYOUT_PREDICT_REACH && vel.x > FLYOUT_PREDICT_SPEED
+                        };
+                        approaching_from && p.y >= rect.top() - FLYOUT_PREDICT_ROW_MARGIN && p.y <= rect.bottom() + FLYOUT_PREDICT_ROW_MARGIN
+                    });
+                    let over_slot = pointer_pos.is_some_and(|p| rect.expand(FLYOUT_PREDICT_ROW_MARGIN).contains(p));
+                    let approaching = !down && moving && (in_approach || over_slot);
+                    // When a flyout is already open, do not switch to lower or other slots
+                    let smart_open = app.ui.flyout.is_none() && slot.len() > 1 && !editing && approaching && !is_floating(app, None, slot[0]);
+                    if press.is_some() || smart_open {
                         if is_floating(app, None, slot[0]) {
                             raise = Some(slot[0]);
                         } else {
@@ -1065,8 +1116,17 @@ pub(crate) fn beside(anchor: egui::Rect, width: f32, gap: f32, screen: egui::Rec
 }
 
 fn flyout(app: &mut VectorcraftApp, ctx: &egui::Context) {
-    if app.ui.flyout.is_none() {
+    let open = app.ui.flyout.is_some();
+    let skip_close_animation = ctx.data(|d| d.get_temp::<bool>(egui::Id::unique("tool-flyout-skip-close-animation"))).unwrap_or(false);
+    let progress = ctx.animate_bool_responsive(egui::Id::unique("tool-flyout-animation"), open);
+    if !open && (skip_close_animation || progress <= f32::EPSILON) {
+        if progress <= f32::EPSILON {
+            ctx.data_mut(|d| d.remove_temp::<bool>(egui::Id::unique("tool-flyout-skip-close-animation")));
+        }
         return;
+    }
+    if open {
+        ctx.data_mut(|d| d.remove_temp::<bool>(egui::Id::unique("tool-flyout-skip-close-animation")));
     }
     let tools: Vec<String> = ctx.data(|d| d.get_temp(egui::Id::unique("flyout-tools"))).unwrap_or_default();
     if tools.is_empty() {
@@ -1083,13 +1143,23 @@ fn flyout(app: &mut VectorcraftApp, ctx: &egui::Context) {
     let mut input = FlyoutInput::default();
     // Beside the tool, on the side with room for it: toward the canvas from a toolbar docked right.
     let size = ctx.memory(|m| m.area_rect(egui::Id::unique("tool-flyout"))).map_or(vec2(160.0, 0.0), |r| r.size());
-    let x = beside(anchor, size.x, 8.0, room(app, ctx));
+    let x = beside(anchor, size.x, FLYOUT_GAP, room(app, ctx));
+    let slide = FLYOUT_GAP * (1.0 - progress);
+    let animated_x = if x >= anchor.right() { x - slide } else { x + slide };
     // The area stays inside the window (egui's `Area::constrain`, on by default): a flyout opened
     // near the bottom moves up, and a group taller than the window scrolls a located row into view.
-    let resp =
-        egui::Area::new(egui::Id::unique("tool-flyout")).order(egui::Order::Foreground).fixed_pos(pos2(x, anchor.top() - 1.0)).show(ctx, |ui| {
+    let resp = egui::Area::new(egui::Id::unique("tool-flyout")).order(egui::Order::Foreground).fixed_pos(pos2(animated_x, anchor.top() - 1.0)).show(
+        ctx,
+        |ui| {
+            ui.multiply_opacity(progress);
             flyout_frame(&t, false).show(ui, |ui| input = flyout_body(ui, &t, active, &tools, false, toolbar.as_deref(), locate, reveal_row));
-        });
+        },
+    );
+    // Keep drawing the last frame's contents while the flyout animates closed. It no longer
+    // receives clicks or participates in flyout-open behaviour during this transition.
+    if !open {
+        return;
+    }
     if let Some(rect) = input.located {
         let clip = input.located_clip.map_or(resp.response.rect, |c| c.intersect(resp.response.rect));
         learn_locate::mark(app, ctx, resp.response.layer_id, clip, rect);
@@ -1112,15 +1182,37 @@ fn flyout(app: &mut VectorcraftApp, ctx: &egui::Context) {
         if let Some(strips) = strips_mut(&mut app.ui, toolbar.as_deref()) {
             strips.push(crate::state::FloatingFlyout { tools, pos: [p.x, p.y] });
         }
+        // The same group becomes a separate floating area next frame, so don't keep drawing
+        // the closing dock flyout with duplicate widget ids during that move.
+        ctx.data_mut(|d| d.insert_temp(egui::Id::unique("tool-flyout-skip-close-animation"), true));
         app.ui.flyout = None;
         return;
     }
     if let Some(id) = input.chosen {
         app.select_tool(id);
-    } else if resp.response.clicked_elsewhere() && !ctx.input(|i| i.pointer.interact_pos().is_some_and(|p| anchor.contains(p))) {
-        // A click on the flyout's own tool button (the right-click that opened it, or the end of a
-        // long press) leaves it to that button.
         app.ui.flyout = None;
+    } else {
+        let pointer = ctx.input(|i| i.pointer.hover_pos());
+        let vel = ctx.input(|i| i.pointer.velocity());
+        // Safe hover corridor between anchor button and flyout frame
+        let corridor = anchor.union(resp.response.rect).expand(FLYOUT_CORRIDOR_PADDING);
+        let over = pointer.is_some_and(|p| corridor.contains(p));
+        // Moving decisively back out toward the canvas closes it on either side of the window.
+        let retreating = pointer.is_some_and(|p| {
+            let toward_canvas = if resp.response.rect.center().x > anchor.center().x {
+                p.x > resp.response.rect.right() + FLYOUT_RETREAT_MARGIN && vel.x > FLYOUT_RETREAT_SPEED
+            } else {
+                p.x < resp.response.rect.left() - FLYOUT_RETREAT_MARGIN && vel.x < -FLYOUT_RETREAT_SPEED
+            };
+            toward_canvas
+                || (p.y < corridor.top() - FLYOUT_RETREAT_MARGIN || p.y > corridor.bottom() + FLYOUT_RETREAT_MARGIN)
+                    && vel.length() > FLYOUT_RETREAT_SPEED
+        });
+        if (!over && retreating)
+            || (resp.response.clicked_elsewhere() && !ctx.input(|i| i.pointer.interact_pos().is_some_and(|p| anchor.contains(p))))
+        {
+            app.ui.flyout = None;
+        }
     }
     if app.ui.flyout.is_some() {
         mark_flyout_open(ctx);

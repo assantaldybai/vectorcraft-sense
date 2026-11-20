@@ -21,7 +21,7 @@ pub(crate) fn drawable(control: Rect, view: Affine, n: &Node) -> bool {
 pub(crate) fn single_plain_fill(n: &Node) -> bool {
     let mut painted = n.appearance.items.iter().filter(|i| match i {
         AppearanceItem::Fill(f) => f.visible && !f.paint.is_none(),
-        AppearanceItem::Stroke(s) => s.visible && !s.paint.is_none() && s.width > 0.0,
+        AppearanceItem::Stroke(s) => s.visible && !s.paint.is_none() && s.width >= 0.0,
     });
     matches!((painted.next(), painted.next()), (Some(AppearanceItem::Fill(f)), None) if f.blend == vectorcraft_color::BlendMode::Normal && f.opacity >= 1.0 && !matches!(f.paint, vectorcraft_color::Paint::Pattern { .. }))
 }
@@ -53,7 +53,7 @@ pub(crate) fn painted_items(n: &Node) -> usize {
         .iter()
         .filter(|i| match i {
             AppearanceItem::Fill(f) => f.visible && !f.paint.is_none() && matches!(f.paint, vectorcraft_color::Paint::Solid { .. }),
-            AppearanceItem::Stroke(s) => s.visible && !s.paint.is_none() && s.width > 0.0 && matches!(s.paint, vectorcraft_color::Paint::Solid { .. }),
+            AppearanceItem::Stroke(s) => s.visible && !s.paint.is_none() && s.width >= 0.0 && matches!(s.paint, vectorcraft_color::Paint::Solid { .. }),
         })
         .count()
         .max(if n.appearance.items.iter().any(|i| matches!(i, AppearanceItem::Fill(f) if f.visible && !matches!(f.paint, vectorcraft_color::Paint::Solid { .. } | vectorcraft_color::Paint::None)) || matches!(i, AppearanceItem::Stroke(s) if s.visible && (!matches!(s.paint, vectorcraft_color::Paint::Solid { .. } | vectorcraft_color::Paint::None) || (s.dash.is_some() && s.brush.is_some() && !s.paint.is_none())))) { 2 } else { 0 })

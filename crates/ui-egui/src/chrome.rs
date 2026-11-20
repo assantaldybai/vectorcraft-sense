@@ -371,8 +371,8 @@ pub fn window_title(app: &VectorcraftApp) -> String {
     let title = app
         .session
         .active()
-        .map(|d| format!("{}{} \u{2014} VectorCraft", if d.is_dirty() { "*" } else { "" }, d.title()))
-        .unwrap_or_else(|| "VectorCraft".into());
+        .map(|d| format!("{}{} \u{2014} VectorCraft: Sense Edition", if d.is_dirty() { "*" } else { "" }, d.title()))
+        .unwrap_or_else(|| "VectorCraft: Sense Edition".into());
     if vectorcraft_plugins::safe_mode::active() { format!("{title} ({})", tl!("Safe Mode")) } else { title }
 }
 

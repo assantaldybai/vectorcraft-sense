@@ -2246,6 +2246,45 @@ fn handle_drag_snaps_to_anchors_and_ruler_guides_with_snap_to_point() {
     assert!(near(r, Rect::new(100.0, 100.0, 230.5, 200.0)), "{r:?}");
 }
 
+#[test]
+fn snap_to_corners_and_guides_takes_priority_over_pixel_snap_without_1px_gap() {
+    use vectorcraft_doc::{Appearance, Node};
+    let (mut d, id) = doc_with_rect();
+    let l = d.layers[0].id;
+    let other = d.alloc_id();
+    let sq = vectorcraft_geom::shapes::rectangle(Rect::new(250.0, 250.0, 300.0, 300.0));
+    d.insert(Some(l), 1, Node::path(other, sq, Appearance::default_art())).unwrap();
+    d.add_ruler_guide(&vectorcraft_doc::Guide::new(true, 230.5));
+    let mut s = Selection::default();
+    s.add(id);
+    let p = paint();
+    let drag = |c: &ToolContext, from: (f64, f64), to: (f64, f64)| {
+        let mut t = SelectionTool::default();
+        t.pointer(c, &ev(PointerKind::Down, from.0, from.1));
+        scaled(&t.pointer(c, &ev(PointerKind::Drag, to.0, to.1)))
+    };
+    // With Snap to Pixel on, corner and ruler guide snap must not be rounded away to an integer pixel!
+    let c = ToolContext { snap_to_pixel: true, smart_guides: true, ..cx(&d, &s, &p) };
+    let r = drag(&c, (200.0, 150.0), (231.5, 150.0));
+    assert!(near(r, Rect::new(100.0, 100.0, 230.5, 200.0)), "locked to 230.5 guide without 1px gap: {r:?}");
+    let r = drag(&c, (200.0, 200.0), (249.0, 251.0));
+    assert!(near(r, Rect::new(100.0, 100.0, 250.0, 250.0)), "locked corner-to-corner at 250.0: {r:?}");
+}
+
+#[test]
+fn an_exact_ruler_guide_snap_is_not_rounded_away_by_pixel_snapping() {
+    let (mut d, id) = doc_with_rect();
+    d.add_ruler_guide(&vectorcraft_doc::Guide::new(true, 173.4));
+    let mut s = Selection::default();
+    s.add(id);
+    let p = paint();
+    let c = ToolContext { snap_to_pixel: true, ..cx(&d, &s, &p) };
+    let mut snap = MoveSnap::new(&c);
+    let (delta, guides) = snap.snap(&c, Point::new(150.0, 150.0), Vec2::new(23.4, 0.0), false);
+    assert!((delta.x - 23.4).abs() < 1e-9, "the grabbed point remains on x=173.4: {delta:?}");
+    assert!(!guides.is_empty(), "the exact guide still explains the snap");
+}
+
 /// Smart Guides › Measurement Labels, Transform Tools and Snapping Tolerance (#394): the
 /// readouts while moving and while scaling each follow their option; the tolerance sets how
 /// far a dragged handle is pulled.

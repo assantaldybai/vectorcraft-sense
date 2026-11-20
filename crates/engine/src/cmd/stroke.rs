@@ -133,8 +133,27 @@ impl StrokeChange {
             }
             Some(v) => return Err(bad(cmd, format!("dash must be a list of lengths or null, got {v}"))),
         };
+        let weight = match p.get("weight") {
+            Some(Value::Number(n)) => n.as_f64().map(|w| w.clamp(0.0, 1000.0)),
+            Some(Value::String(s)) => {
+                let trimmed = s.trim();
+                if trimmed.eq_ignore_ascii_case("hairline")
+                    || trimmed.eq_ignore_ascii_case("hair")
+                    || trimmed.eq_ignore_ascii_case("h")
+                {
+                    Some(0.0)
+                } else if let Ok(v) = trimmed.parse::<f64>() {
+                    Some(v.clamp(0.0, 1000.0))
+                } else if let Some(v) = trimmed.split_whitespace().next().and_then(|part| part.parse::<f64>().ok()) {
+                    Some(v.clamp(0.0, 1000.0))
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
         Ok(Self {
-            weight: num("weight").map(|w| w.clamp(0.0, 1000.0)),
+            weight,
             cap: named(&CAPS, p, "cap", cmd)?,
             join: named(&JOINS, p, "join", cmd)?,
             miter_limit: num("miterLimit").map(|m| m.clamp(1.0, 500.0)),

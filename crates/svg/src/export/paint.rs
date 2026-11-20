@@ -387,7 +387,10 @@ impl Writer<'_> {
         if s.opacity < 1.0 {
             p.push(("stroke-opacity", fmt_num(s.opacity as f64, 3)));
         }
-        if (width - 1.0).abs() > 1e-9 {
+        if s.width == 0.0 {
+            p.push(("stroke-width", "1".into()));
+            p.push(("vector-effect", "non-scaling-stroke".into()));
+        } else if (width - 1.0).abs() > 1e-9 {
             p.push(("stroke-width", self.num(width)));
         }
         match s.cap {

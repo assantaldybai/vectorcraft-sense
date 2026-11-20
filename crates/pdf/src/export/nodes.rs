@@ -603,7 +603,7 @@ impl Exporter<'_> {
                     });
                 }
                 AppearanceItem::Stroke(st) => {
-                    if !st.visible || st.paint.is_none() || st.width <= 0.0 {
+                    if !st.visible || st.paint.is_none() || st.width < 0.0 {
                         continue;
                     }
                     self.warn_raster(&st.effects, || "strokes".into());
@@ -1046,7 +1046,7 @@ impl<'a, 'd> BrushSearch<'a, 'd> {
         for item in n.appearance.items.iter().filter(|i| i.visible()) {
             let paint = match item {
                 AppearanceItem::Fill(f) => &f.paint,
-                AppearanceItem::Stroke(st) if st.paint.is_none() || st.width <= 0.0 => continue,
+                AppearanceItem::Stroke(st) if st.paint.is_none() || st.width < 0.0 => continue,
                 AppearanceItem::Stroke(st) => {
                     if st.brush.as_deref().is_some_and(|name| self.brushes.iter().any(|b| b.name == name)) {
                         return true;

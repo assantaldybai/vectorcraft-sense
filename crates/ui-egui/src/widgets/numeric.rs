@@ -57,7 +57,7 @@ pub fn num_field_refusing(
     bounds: RangeInclusive<f64>,
 ) -> Option<f64> {
     let label = take_previous_label(ui);
-    unit_field_from(ui, id, label, None, value, unit, width, false, bounds, &[], false, None, "", true)
+    unit_field_from(ui, id, label, None, value, unit, width, false, bounds, &[], false, None, "", true, None)
 }
 
 /// [`num_field_within`] whose empty value reads `empty` (Transform Each's Absolute scales read
@@ -115,7 +115,7 @@ fn unit_field(
     live: bool,
     empty: &str,
 ) -> Option<f64> {
-    unit_field_from(ui, id, label, name, value, unit, width, share_of_value, bounds, stops, live, None, empty, false)
+    unit_field_from(ui, id, label, name, value, unit, width, share_of_value, bounds, stops, live, None, empty, false, None)
 }
 
 /// [`unit_field`] whose blank field (`value` is `None`) steps from `blank_from` (points) with
@@ -138,10 +138,19 @@ fn unit_field_from(
     blank_from: Option<f64>,
     empty: &str,
     refuse_outside: bool,
+    custom_fmt: Option<&dyn Fn(f64) -> String>,
 ) -> Option<f64> {
     let armed = take_armed_focus(ui, &id);
     let id = id_with(ui.scope_id(), id);
-    let shown = value.map(|v| unit.format(v)).unwrap_or_else(|| empty.to_string());
+    let format_val = |v: f64| match custom_fmt {
+        Some(f) => f(v),
+        None => unit.format(v),
+    };
+    let format_pt = |pt: f64| match custom_fmt {
+        Some(f) => f(pt),
+        None => unit.format(pt),
+    };
+    let shown = value.map(format_val).unwrap_or_else(|| empty.to_string());
     take_dialog_focus(ui, id, &shown);
     if armed {
         focus_field(ui, id, &shown);
@@ -154,7 +163,19 @@ fn unit_field_from(
     select_all_on_focus(ui, &resp, &buf);
     // ↑/↓ and the wheel step in the field's unit; a drag on its label scrubs it.
     let typed = typed_unit(ui.ctx(), unit);
-    let read = |b: &str| typed.parse(&decimal_point(b));
+    let read = |b: &str| {
+        let s = b.trim();
+        if custom_fmt.is_some()
+            && (s.eq_ignore_ascii_case("hairline")
+                || s.eq_ignore_ascii_case("hair")
+                || s.eq_ignore_ascii_case("h")
+                || s.eq_ignore_ascii_case(&tl!("Hairline")))
+        {
+            Some(0.0)
+        } else {
+            typed.parse(&decimal_point(b))
+        }
+    };
     let bounds_unit = unit.from_pt(*bounds.start())..=unit.from_pt(*bounds.end());
     let stops: Vec<f64> = stops.iter().map(|&s| unit.from_pt(s)).collect();
     let blank_from = blank_from.filter(|_| value.is_none());
@@ -163,7 +184,7 @@ fn unit_field_from(
         None if b.trim().is_empty() => blank_from.map(|v| unit.from_pt(v)),
         None => None,
     };
-    let stepped = step_value(ui, &resp, &mut buf, &bounds_unit, (read_unit, |v| unit.format(unit.to_pt(v))), None, &stops);
+    let stepped = step_value(ui, &resp, &mut buf, &bounds_unit, (read_unit, |v| format_pt(unit.to_pt(v))), None, &stops);
     let scrubbed = scrub::field(ui, id, rect, &buf, value.map(|v| unit.from_pt(v)), STEP_DECIMALS, &bounds_unit);
     let commit = commit && buf != shown;
     if commit {
@@ -174,7 +195,7 @@ fn unit_field_from(
         match typed_value {
             Some(v) => {
                 let clamped = within(v, &bounds);
-                let formatted = unit.format(clamped);
+                let formatted = format_val(clamped);
                 ui.data_mut(|d| d.insert_temp(id, formatted));
                 Some(clamped)
             }
@@ -198,7 +219,7 @@ fn unit_field_from(
             && resp.changed()
             && let Some(v) = read(&buf).filter(|v| v.is_finite()).map(|v| within(v, &bounds)).filter(|v| Some(*v) != value)
         {
-            ui.data_mut(|d| d.insert_temp(id.with("shown"), unit.format(v)));
+            ui.data_mut(|d| d.insert_temp(id.with("shown"), format_val(v)));
             ui.ctx().request_repaint();
             return Some(v);
         }
@@ -1035,9 +1056,9 @@ pub fn spin_field_stops_named(
     let blank_from = BLANK_WEIGHT_STEPS_FROM;
     // A blank field steps in points from `blank_from`, whatever the unit's preset ladder (#5349).
     let stops = if value.is_none() { &BLANK_WEIGHT_STOPS[..] } else { presets };
-    let fmt = |v: f64| unit.format(v);
+    let fmt = |v: f64| if v == 0.0 { tl!("Hairline").to_string() } else { unit.format(v) };
     spin_generic(ui, label, value, Some(blank_from), None, None, None, width, step, min, presets, stops, &fmt, &mut |ui, fw, label| {
-        unit_field_from(ui, id, label, name, value, unit, fw, false, min..=f64::INFINITY, stops, false, Some(blank_from), "", false)
+        unit_field_from(ui, id, label, name, value, unit, fw, false, min..=f64::INFINITY, stops, false, Some(blank_from), "", false, Some(&fmt))
     })
     .and_then(SpinPick::value)
 }

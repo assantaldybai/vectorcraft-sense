@@ -41,6 +41,31 @@ pub(crate) const COLUMN_MAX: f32 = 720.0;
 pub(crate) const ICON_WIDTH: f32 = 38.0;
 /// The narrowest a panel other than the canvas is drawn, docked or floating.
 pub(crate) const PANEL_MIN_WIDTH: f32 = 220.0;
+/// How long a pointer must keep its predicted course toward an icon before its panel opens.
+const ICON_INTENT_DELAY: f64 = 0.025;
+/// How far beyond an icon the pointer may be while still predicting an approach.
+const ICON_INTENT_REACH: f32 = 250.0;
+/// How far ahead a pointer trajectory may be projected when opening an icon panel.
+const ICON_INTENT_HORIZON: f32 = 0.45;
+/// Speed needed to predict motion toward an icon, in points per second.
+const ICON_INTENT_SPEED: f32 = 40.0;
+/// How long a hover-opened flyout waits after the pointer leaves before it starts folding.
+const ICON_HOVER_CLOSE_DELAY: f64 = 0.16;
+/// Duration of a flyout's eased reveal and fold, in seconds.
+const ICON_FLYOUT_ANIMATION: f32 = 0.19;
+/// Extra room around the flyout and its opening icon that keeps a hover-opened panel engaged.
+const ICON_HOVER_PADDING: f32 = 8.0;
+
+#[derive(Default)]
+struct HoverFlyout {
+    panel: String,
+    /// Has the pointer reached the icon or the flyout after predictive opening?
+    entered: bool,
+    /// When the pointer most recently left the icon and flyout.
+    left_at: Option<f64>,
+    /// Keep the flyout drawn while its eased closing transition finishes.
+    closing: bool,
+}
 
 /// Docking state that lives for the session only.
 #[derive(Default)]
@@ -55,6 +80,12 @@ pub(crate) struct Runtime {
     focused: Option<String>,
     /// Hidden panels shown from the window's edges ([`peek`]).
     peek: peek::State,
+    /// Icon panel whose hover intent is currently being confirmed.
+    icon_approach: Option<(String, f64)>,
+    /// A flyout opened predictively; unlike a click-opened flyout, it folds after pointer exit.
+    hover_flyout: Option<HoverFlyout>,
+    /// Eased reveal progress for the icon flyout currently on screen.
+    icon_flyout_progress: f32,
 }
 
 /// Every docking control the main window drew last frame with its rect. Controls in floating
@@ -1248,6 +1279,20 @@ pub(crate) fn show(app: &mut VectorcraftApp, ui: &mut egui::Ui) {
         app.status(tl!("Invalid panel layout; restored the default dock").to_string());
     }
     let mut layout = layout_of(&app.ui);
+    let icon_flyout_open = app.ui.open_panel.as_ref().is_some_and(|panel| in_iconic_column(&layout, panel));
+    let hover_closing =
+        app.dock_rt.hover_flyout.as_ref().is_some_and(|hover| hover.closing && app.ui.open_panel.as_deref() == Some(hover.panel.as_str()));
+    let target_open = icon_flyout_open && !hover_closing;
+    app.dock_rt.icon_flyout_progress = if ctx.input(|input| input.raw.time.is_some()) {
+        ctx.animate_bool_with_time_and_easing(area.with("icon-flyout-reveal"), target_open, ICON_FLYOUT_ANIMATION, egui::emath::easing::cubic_out)
+    } else {
+        // Headless hosts without a frame clock cannot advance an animation; draw the final state.
+        f32::from(target_open)
+    };
+    if hover_closing && app.dock_rt.icon_flyout_progress <= f32::EPSILON {
+        app.ui.open_panel = None;
+        app.dock_rt.hover_flyout = None;
+    }
     // `open_panel` is the open flyout: a command or a workspace that sets it opens that flyout,
     // showing that panel of its group.
     let flyout = craft_ui::docking::flyout::<String>(&ctx, area);
@@ -1335,11 +1380,148 @@ pub(crate) fn show(app: &mut VectorcraftApp, ui: &mut egui::Ui) {
         app.open_dropped_files(window.dropped, None, shift);
     }
     forward_keys(app, &ctx, output.forwarded_events, output.forwarded_modifiers);
+    // Predict icon intent from the pointer's projected intersection with an icon. A short
+    // confirmation interval filters cursor paths that only pass nearby.
+    let (pointer, vel, down, pressed, now) =
+        ctx.input(|i| (i.pointer.hover_pos(), i.pointer.velocity(), i.pointer.any_down(), i.pointer.any_pressed(), i.time));
+    let hits = hit_rects(&ctx);
+    let canvas_center = app.canvas_rect.map_or(ctx.content_rect().center().x, |rect| rect.center().x);
+    let opening_icon = app.dock_rt.hover_flyout.as_ref().map(|hover| hover.panel.clone());
+    if app.ui.open_panel.as_deref() != opening_icon.as_deref() {
+        app.dock_rt.hover_flyout = None;
+    }
+    if let Some(hover) = app.dock_rt.hover_flyout.as_mut() {
+        let icon_rect = hits.iter().find_map(|(hit, rect)| match hit {
+            craft_ui::docking::Hit::Icon(panel) if panel == &hover.panel => Some(*rect),
+            _ => None,
+        });
+        let flyout_rect = ctx.memory(|memory| memory.area_rect(area.with("flyout")));
+        let on_icon = pointer.is_some_and(|p| icon_rect.is_some_and(|rect| rect.expand(ICON_HOVER_PADDING).contains(p)));
+        let on_flyout = pointer.is_some_and(|p| flyout_rect.is_some_and(|rect| rect.expand(ICON_HOVER_PADDING).contains(p)));
+        if pressed && (on_icon || on_flyout) {
+            // A click takes ownership of the flyout, so it now follows the explicit open/close
+            // preference instead of the short hover lifetime.
+            app.dock_rt.hover_flyout = None;
+        } else if on_icon || on_flyout {
+            hover.entered = true;
+            hover.left_at = None;
+            hover.closing = false;
+        } else {
+            let still_approaching = !hover.entered && pointer.is_some_and(|p| approaching_icon(&hits, &hover.panel, p, vel, canvas_center));
+            if still_approaching {
+                hover.left_at = None;
+            } else {
+                let left_at = *hover.left_at.get_or_insert(now);
+                let remaining = ICON_HOVER_CLOSE_DELAY - (now - left_at);
+                if remaining <= 0.0 {
+                    hover.closing = true;
+                    ctx.request_repaint();
+                } else if !hover.closing {
+                    ctx.request_repaint_after_secs(remaining as f32);
+                }
+            }
+        }
+    }
+    if !down && app.ui.open_panel.is_none() {
+        let candidate = pointer.and_then(|p| {
+            hits.iter().find_map(|(hit, r)| {
+                let craft_ui::docking::Hit::Icon(panel) = hit else { return None };
+                if !in_iconic_column(&layout, panel) {
+                    return None;
+                }
+                let hovered = r.expand(r.width() * 0.1).contains(p);
+                (hovered || approaching_icon(&hits, panel, p, vel, canvas_center)).then(|| panel.clone())
+            })
+        });
+        if let Some(panel) = candidate {
+            let since = match app.dock_rt.icon_approach.as_ref() {
+                Some((approached, since)) if approached == &panel => *since,
+                _ => now,
+            };
+            if now - since + 1e-4 >= ICON_INTENT_DELAY {
+                app.ui.open_panel = Some(panel.clone());
+                app.dock_rt.hover_flyout = Some(HoverFlyout { panel, ..Default::default() });
+                app.dock_rt.icon_approach = None;
+                ctx.request_repaint();
+            } else {
+                app.dock_rt.icon_approach = Some((panel, since));
+                ctx.request_repaint_after_secs((ICON_INTENT_DELAY - (now - since)) as f32);
+            }
+        } else {
+            app.dock_rt.icon_approach = None;
+        }
+    } else {
+        app.dock_rt.icon_approach = None;
+    }
     if peeking.is_none() && !thumbnail_panel_showing(&app.ui, &ctx) {
         // No panel can ask for these rows again this pass. Keep the cache of open documents, but
         // discard worker jobs queued behind the one already rendering.
         crate::panels::layers::show_thumbs_of(None);
     }
+}
+
+fn approaching_icon(
+    hits: &[(craft_ui::docking::Hit<String>, egui::Rect)],
+    panel: &str,
+    pointer: egui::Pos2,
+    velocity: egui::Vec2,
+    canvas_center: f32,
+) -> bool {
+    let Some(rect) = hits.iter().find_map(|(hit, rect)| match hit {
+        craft_ui::docking::Hit::Icon(id) if id == panel => Some(*rect),
+        _ => None,
+    }) else {
+        return false;
+    };
+    if !pointer.is_finite() || !velocity.is_finite() {
+        return false;
+    }
+    let from_canvas = if rect.center().x > canvas_center {
+        pointer.x < rect.left() && velocity.x > ICON_INTENT_SPEED
+    } else {
+        pointer.x > rect.right() && velocity.x < -ICON_INTENT_SPEED
+    };
+    if !from_canvas {
+        return false;
+    }
+    let edge_x = if rect.center().x > canvas_center { rect.left() } else { rect.right() };
+    let eta = (edge_x - pointer.x) / velocity.x;
+    let projected_y = pointer.y + velocity.y * eta;
+    eta.is_finite()
+        && (0.0..=ICON_INTENT_HORIZON).contains(&eta)
+        && (edge_x - pointer.x).abs() <= ICON_INTENT_REACH
+        && projected_y >= rect.top() - rect.height() * 0.5
+        && projected_y <= rect.bottom() + rect.height() * 0.5
+}
+
+fn animate_icon_flyout_body(app: &VectorcraftApp, ui: &mut egui::Ui, layout: &Layout<String>, panel: &str) {
+    let Some(anchor) = app.ui.open_panel.as_deref() else { return };
+    if !dock_columns(layout)
+        .iter()
+        .filter(|column| column.iconic)
+        .flat_map(|column| &column.groups)
+        .any(|group| group.panels.iter().any(|id| id == anchor) && group.panels.iter().any(|id| id == panel))
+    {
+        return;
+    }
+    let rect = ui.max_rect();
+    if !rect.is_positive() {
+        return;
+    }
+    let progress = app.dock_rt.icon_flyout_progress.clamp(0.0, 1.0);
+    let icon = hit_rects(ui.ctx()).into_iter().find_map(|(hit, rect)| match hit {
+        craft_ui::docking::Hit::Icon(id) if id == anchor => Some(rect),
+        _ => None,
+    });
+    let canvas_center = app.canvas_rect.map_or(ui.ctx().content_rect().center().x, |canvas| canvas.center().x);
+    let opens_from_right = icon.map_or(true, |rect| rect.center().x > canvas_center);
+    let revealed = if opens_from_right {
+        egui::Rect::from_min_max(egui::pos2(rect.right() - rect.width() * progress, rect.top()), rect.max)
+    } else {
+        egui::Rect::from_min_max(rect.min, egui::pos2(rect.left() + rect.width() * progress, rect.bottom()))
+    };
+    ui.set_clip_rect(ui.clip_rect().intersect(revealed));
+    ui.multiply_opacity(progress);
 }
 
 /// Whether a modal is open: a dialog, About, the command palette, a native file dialog, an update
@@ -1571,6 +1753,8 @@ impl craft_ui::docking::DockContent<String> for PanelContent<'_> {
         let field_had_keyboard = floating && ui.memory(|m| m.focused().is_some());
         let t = crate::theme::Tokens::get(ui.ctx());
         let back = ui.max_rect();
+        peek::animate_panel_body(self.app, ui, self.layout, id);
+        animate_icon_flyout_body(self.app, ui, self.layout, id);
         if back.is_positive() {
             ui.painter().rect_filled(back, 0.0, t.panel);
         }
@@ -1656,6 +1840,9 @@ impl craft_ui::docking::DockContent<String> for PanelContent<'_> {
             header.min.x = split;
         }
         let flyout = self.app.ui.open_panel.clone().filter(|panel| panels.contains(panel));
+        if flyout.is_some() {
+            ui.multiply_opacity(self.app.dock_rt.icon_flyout_progress);
+        }
         let menu_cell = if floating || flyout.is_some() {
             let split = (header.right() - 28.0).max(header.left());
             let cell = egui::Rect::from_min_max(header.min, egui::pos2(split, header.bottom()));

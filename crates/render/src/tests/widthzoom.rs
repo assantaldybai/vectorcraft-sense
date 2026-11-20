@@ -61,3 +61,12 @@ fn a_stroke_too_thin_to_see_is_kept_visible_by_its_widest_point() {
     let end: f64 = (0..SIZE).map(|y| 1.0 - img.pixel(7, y)[0] as f64 / 255.0).sum();
     assert!(end < shaped * 0.75, "the thin end stays thinner than the middle: {end} against {shaped}");
 }
+
+#[test]
+fn freehand_hairline_stroke_stays_one_device_pixel_across_zooms() {
+    // FreeHand / PostScript hairline (weight 0.0) renders as 1 device pixel regardless of zoom.
+    for scale in [0.25, 0.5, 1.0] {
+        let ink = ink_at_middle(&render(0.0, None, scale), scale);
+        assert!((ink - 1.0).abs() < 0.35, "hairline at scale {scale} stays ~1 device px: {ink}");
+    }
+}

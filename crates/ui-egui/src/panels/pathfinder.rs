@@ -65,10 +65,32 @@ pub(crate) fn operands(app: &VectorcraftApp) -> usize {
     }
 }
 
+const PATHFINDER_PREVIEW: &str = "pathfinder-preview";
+
+fn drawn_id() -> egui::Id {
+    egui::Id::unique("pathfinder-panel-drawn")
+}
+
+pub(crate) fn end_stale_preview(app: &mut VectorcraftApp, ctx: &egui::Context) {
+    let prev: Option<String> = crate::panels::pstate(ctx, PATHFINDER_PREVIEW);
+    if prev.is_none() {
+        return;
+    }
+    let cur_pass = ctx.cumulative_pass_nr();
+    let drawn = ctx.data(|d| d.get_temp::<u64>(drawn_id()));
+    let stale = drawn.map_or(true, |pass| pass + 1 < cur_pass);
+    let (escape, press) = ctx.input(|i| (i.key_pressed(egui::Key::Escape), i.pointer.any_pressed()));
+    if stale || escape || press {
+        app.session.cancel_interaction().ok();
+        crate::panels::set_pstate(ctx, PATHFINDER_PREVIEW, None::<String>);
+        app.sync_views();
+    }
+}
+
 /// An operation's button, lit while `selected`, greyed out and saying what it needs unless the
 /// selection has `min` operands. While `mixed` it carries a question mark, and screen readers
-/// report its pressed state as mixed.
-fn button(ui: &mut Ui, icon: &str, tip: &str, selected: bool, mixed: bool, n: usize, min: usize) -> bool {
+/// report its pressed state as mixed. Returns (clicked, hovered).
+fn button(ui: &mut Ui, icon: &str, tip: &str, selected: bool, mixed: bool, n: usize, min: usize) -> (bool, bool) {
     let resp = widgets::icon_button_enabled(ui, icon, tip, selected, n >= min, 34.0);
     if mixed {
         mixed_mark(ui, resp.rect);
@@ -76,9 +98,9 @@ fn button(ui: &mut Ui, icon: &str, tip: &str, selected: bool, mixed: bool, n: us
     }
     if n < min {
         resp.on_hover_text(tl!("Select two or more objects, or a group"));
-        return false;
+        return (false, false);
     }
-    resp.clicked()
+    (resp.clicked(), resp.hovered())
 }
 
 /// The question mark in the lower right corner of a button `rect`, on a disc of the panel color so
@@ -113,6 +135,8 @@ fn shape_mode(app: &mut VectorcraftApp, ui: &Ui, op: &str, mode: ShapeMode, memb
 }
 
 pub fn show(app: &mut VectorcraftApp, ui: &mut Ui) {
+    let cur_pass = ui.ctx().cumulative_pass_nr();
+    ui.ctx().data_mut(|d| d.insert_temp(drawn_id(), cur_pass));
     let n = operands(app);
     // The modes of the compound-shape members selected: their Shape Mode button lights when they
     // share one, and every Shape Mode button shows a question mark when they differ.
@@ -120,18 +144,31 @@ pub fn show(app: &mut VectorcraftApp, ui: &mut Ui) {
     let shared = modes.first().copied().filter(|m| modes.iter().all(|x| x == m));
     let mixed = !modes.is_empty() && shared.is_none();
     let expand = crate::menus::enabled(app, "object.compoundShape.expand");
+
+    let mut hovered_op: Option<&'static str> = None;
+    let mut clicked_op: Option<(&'static str, Option<ShapeMode>)> = None;
+
     widgets::subheader(ui, tl!("Shape Modes:"));
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 5.0;
         // Selected members can always take a mode.
         let count = if modes.is_empty() { n } else { n.max(2) };
         for ((icon, tip, op), mode) in SHAPE_MODES.into_iter().zip(ShapeMode::ALL) {
-            if button(ui, icon, tip, shared == Some(mode), mixed, count, 2) {
-                shape_mode(app, ui, op, mode, !modes.is_empty());
+            let (clicked, hovered) = button(ui, icon, tip, shared == Some(mode), mixed, count, 2);
+            if clicked {
+                clicked_op = Some((op, Some(mode)));
+            } else if hovered {
+                hovered_op = Some(op);
             }
         }
         let resp = ui.add_enabled_ui(expand, |ui| widgets::flat_button_fit(ui, "Expand", 90.0)).inner;
         if resp.on_hover_text(tl!("Expand Compound Shape")).on_disabled_hover_text(tl!("Expand Compound Shape")).clicked() {
+            let prev: Option<String> = crate::panels::pstate(ui.ctx(), PATHFINDER_PREVIEW);
+            if prev.is_some() {
+                app.session.cancel_interaction().ok();
+                crate::panels::set_pstate(ui.ctx(), PATHFINDER_PREVIEW, None::<String>);
+                app.sync_views();
+            }
             crate::menus::invoke(app, "object.compoundShape.expand", json!({}));
         }
     });
@@ -140,11 +177,47 @@ pub fn show(app: &mut VectorcraftApp, ui: &mut Ui) {
         ui.spacing_mut().item_spacing.x = 5.0;
         for (icon, tip, op) in PATHFINDERS {
             let min = minimum_operands(op);
-            if button(ui, icon, tip, false, false, n, min) {
-                run(app, op);
+            let (clicked, hovered) = button(ui, icon, tip, false, false, n, min);
+            if clicked {
+                clicked_op = Some((op, None));
+            } else if hovered {
+                hovered_op = Some(op);
             }
         }
     });
+
+    let prev: Option<String> = crate::panels::pstate(ui.ctx(), PATHFINDER_PREVIEW);
+    if let Some((op, mode_opt)) = clicked_op {
+        if prev.is_some() {
+            app.session.cancel_interaction().ok();
+            crate::panels::set_pstate(ui.ctx(), PATHFINDER_PREVIEW, None::<String>);
+            app.sync_views();
+        }
+        if let Some(mode) = mode_opt {
+            shape_mode(app, ui, op, mode, !modes.is_empty());
+        } else {
+            run(app, op);
+        }
+    } else if let Some(op) = hovered_op {
+        if prev.as_deref() != Some(op) {
+            if prev.is_none() {
+                if let Err(e) = app.begin_interaction("Pathfinder Preview") {
+                    app.ui.status = e;
+                    return;
+                }
+            }
+            let cmd = format!("object.pathfinder.{op}");
+            if let Err(e) = app.session.preview(&cmd, &json!({})) {
+                app.ui.status = e.to_string();
+            }
+            crate::panels::set_pstate(ui.ctx(), PATHFINDER_PREVIEW, Some(op.to_string()));
+            app.sync_views();
+        }
+    } else if prev.is_some() {
+        app.session.cancel_interaction().ok();
+        crate::panels::set_pstate(ui.ctx(), PATHFINDER_PREVIEW, None::<String>);
+        app.sync_views();
+    }
 }
 
 /// Pathfinder panel › Trap…: the Trap dialog (`object.pathfinder.trap`'s options) for two or more
@@ -781,5 +854,48 @@ mod tests {
         assert!(serde_json::from_value::<crate::state::UiState>(saved.clone()).unwrap().shape_modes_compound);
         saved.as_object_mut().unwrap().remove("shape_modes_compound");
         assert!(!serde_json::from_value::<crate::state::UiState>(saved).unwrap().shape_modes_compound);
+    }
+
+    /// Hovering over a Pathfinder button previews the result live on the canvas, moving away restores
+    /// the original document, and clicking commits the operation.
+    #[test]
+    fn pathfinder_hover_previews_live_and_restores_on_unhover() {
+        let mut app = two_squares();
+        let orig_doc = app.session.active().unwrap().doc.clone();
+        let ctx = egui::Context::default();
+        ctx.enable_accesskit();
+        crate::theme::install_fonts(&ctx);
+
+        // Frame 1: find Minus Front button position
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(300.0, 200.0));
+        let mut out = ctx.run_ui(egui::RawInput { screen_rect: Some(screen), ..Default::default() }, |ui| show(&mut app, ui));
+        out.textures_delta.clear();
+        let nodes = &out.platform_output.accesskit_update.as_ref().unwrap().nodes;
+        let node = nodes.iter().find(|(_, n)| n.label() == Some("Minus Front")).unwrap();
+        let b = node.1.bounds().unwrap();
+        let at = egui::pos2((b.x0 + b.x1) as f32 * 0.5, (b.y0 + b.y1) as f32 * 0.5);
+
+        // Frame 2: Hover over Minus Front button
+        let input_hover = egui::RawInput {
+            screen_rect: Some(screen),
+            events: vec![egui::Event::PointerMoved(at)],
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input_hover, |ui| show(&mut app, ui));
+        out.textures_delta.clear();
+        assert!(app.session.in_interaction(), "preview interaction begins on hover");
+        assert_eq!(objects(&app).len(), 1, "preview modified doc to 1 united/subtracted object");
+
+        // Frame 3: Move pointer away (unhover)
+        let input_leave = egui::RawInput {
+            screen_rect: Some(screen),
+            events: vec![egui::Event::PointerMoved(egui::pos2(0.0, 0.0))],
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input_leave, |ui| show(&mut app, ui));
+        out.textures_delta.clear();
+        assert!(!app.session.in_interaction(), "preview interaction canceled on unhover");
+        assert_eq!(objects(&app).len(), 2, "original 2 objects restored on unhover");
+        assert_eq!(app.session.active().unwrap().doc, orig_doc, "original document restored");
     }
 }

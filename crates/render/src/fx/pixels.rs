@@ -700,7 +700,7 @@ impl Renderer {
                 AppearanceItem::Fill(_) => ig.clone(),
                 AppearanceItem::Stroke(st) => {
                     let st = &*f.stroke(st);
-                    let w = effects::stroke::aligned_width(st, effects::stroke::is_closed(ig));
+                    let w = if st.width == 0.0 { f.px } else { effects::stroke::aligned_width(st, effects::stroke::is_closed(ig)) };
                     crate::stroke::outline(&effects::stroke::stroke_pieces(ig, st).line, st, w, f.px * 0.25)
                 }
             };
@@ -744,7 +744,7 @@ impl Renderer {
                 }
             }
             AppearanceItem::Stroke(st) => {
-                if st.width <= 0.0 {
+                if st.width < 0.0 {
                     return;
                 }
                 // Brushed strokes keep their brush art under effects (e.g. a glowing scatter brush).

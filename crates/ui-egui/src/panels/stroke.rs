@@ -16,7 +16,7 @@ use crate::{VectorcraftApp, icons};
 /// unit has its own ladder of round values in that unit, so the dropdown reads `0.25 mm`, not the
 /// `0.088 mm` a converted pt ladder gives. Feet, yards and meters, which no stroke is measured
 /// in, keep the pt ladder.
-pub fn weight_presets(unit: Unit) -> [f64; 22] {
+pub fn weight_presets(unit: Unit) -> [f64; 23] {
     let native = match unit {
         Unit::Millimeters => MM_PRESETS,
         Unit::Centimeters => CM_PRESETS,
@@ -28,18 +28,18 @@ pub fn weight_presets(unit: Unit) -> [f64; 22] {
     native.map(|v| unit.to_pt(v))
 }
 
-const PT_PRESETS: [f64; 22] =
-    [0.25, 0.5, 0.75, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0];
-const MM_PRESETS: [f64; 22] = [0.1, 0.25, 0.35, 0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 15.0, 20.0, 25.0, 30.0];
-const CM_PRESETS: [f64; 22] = [0.01, 0.02, 0.03, 0.05, 0.06, 0.07, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0];
-const IN_PRESETS: [f64; 22] =
-    [0.0078, 0.0156, 0.0313, 0.0625, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0];
-const PX_PRESETS: [f64; 22] =
-    [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 30.0, 40.0];
+const PT_PRESETS: [f64; 23] =
+    [0.0, 0.25, 0.5, 0.75, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0];
+const MM_PRESETS: [f64; 23] = [0.0, 0.1, 0.25, 0.35, 0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 15.0, 20.0, 25.0, 30.0];
+const CM_PRESETS: [f64; 23] = [0.0, 0.01, 0.02, 0.03, 0.05, 0.06, 0.07, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0];
+const IN_PRESETS: [f64; 23] =
+    [0.0, 0.0078, 0.0156, 0.0313, 0.0625, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0];
+const PX_PRESETS: [f64; 23] =
+    [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 30.0, 40.0];
 /// The pica ladder (0p1 … 5p) in points, so every entry is an exact pt weight. The dropdown shows
 /// them as decimal picas (`0.083 p`) until [`Unit::number`] writes `0p1` notation.
-const PC_PRESETS: [f64; 22] =
-    [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 15.0, 18.0, 21.0, 24.0, 27.0, 30.0, 33.0, 36.0, 48.0, 60.0];
+const PC_PRESETS: [f64; 23] =
+    [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 15.0, 18.0, 21.0, 24.0, 27.0, 30.0, 33.0, 36.0, 48.0, 60.0];
 
 /// A profile's points as its silhouette: none (the plain bar) for the uniform stroke.
 fn silhouette(points: &[(f64, f64, f64)]) -> Option<&[(f64, f64, f64)]> {

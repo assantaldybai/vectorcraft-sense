@@ -586,13 +586,8 @@ pub(super) fn draw_overlays(p: &egui::Painter, xf: &Xf, overlays: &[Overlay], t:
                 let c = Color32::from_rgba_unmultiplied(color[0], color[1], color[2], color[3]);
                 p.add(Shape::convex_polygon(quad.iter().map(|q| xf.to_screen(*q)).collect(), c, Stroke::NONE));
             }
-            Overlay::Measure { p: pt, text } => {
-                let sp = xf.to_screen(*pt) + vec2(14.0, 14.0);
-                let galley = p.layout(text.clone(), egui::FontId::proportional(11.0), Color32::WHITE, 200.0);
-                let r = egui::Rect::from_min_size(sp, galley.size() + vec2(12.0, 8.0));
-                p.rect_filled(r, CornerRadius::same(3), t.measure_bg);
-                p.galley(sp + vec2(6.0, 4.0), galley, Color32::WHITE);
-            }
+            // Drawn as the enlarged interactive HUD badge by `hud_measurement_overlay`.
+            Overlay::Measure { .. } => {}
             Overlay::Distance { a, b, text, color } => distance_guide(p, xf.to_screen(*a), xf.to_screen(*b), text, c32(*color)),
             Overlay::GridLine { a, b, color } => {
                 let c = Color32::from_rgba_unmultiplied(color[0], color[1], color[2], color[3]);

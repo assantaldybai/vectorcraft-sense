@@ -676,7 +676,7 @@ impl<'a> Scene<'a> {
                     self.note_item(fl.opacity, fl.blend);
                     self.fill(bp, rule, &fl.paint, bounds, fl.overprint);
                 }
-                AppearanceItem::Stroke(st) if st.visible && !st.paint.is_none() && st.width > 0.0 && st.width.is_finite() => {
+                AppearanceItem::Stroke(st) if st.visible && !st.paint.is_none() && st.width >= 0.0 && st.width.is_finite() => {
                     self.stroke(bp, rule, st, bounds);
                 }
                 _ => {}
@@ -941,7 +941,7 @@ impl<'a> Scene<'a> {
                     self.note_item(fl.opacity, fl.blend);
                     self.fill(bp, FillRule::NonZero, &fl.paint, tb, fl.overprint);
                 }
-                AppearanceItem::Stroke(st) if st.visible && !st.paint.is_none() && st.width > 0.0 && st.width.is_finite() => {
+                AppearanceItem::Stroke(st) if st.visible && !st.paint.is_none() && st.width >= 0.0 && st.width.is_finite() => {
                     self.stroke(bp, FillRule::NonZero, st, tb);
                 }
                 _ => {}

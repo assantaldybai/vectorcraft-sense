@@ -17,6 +17,23 @@ pub(crate) fn paint_icon_button_named(ui: &mut Ui, resp: Response, icon: &str, n
     let t = Tokens::get(ui.ctx());
     let rect = resp.rect;
     let size = rect.width();
+    let ptr = ui.input(|i| i.pointer.hover_pos());
+    let (mag, animating) = match ptr {
+        Some(p) => {
+            let dist = p.distance(rect.center());
+            let reach = (size * 1.5).max(38.0);
+            if dist < reach {
+                let f = (1.0 - dist / reach).clamp(0.0, 1.0);
+                (1.0 + 0.28 * (f * f * (3.0 - 2.0 * f)), true)
+            } else {
+                (1.0, false)
+            }
+        }
+        None => (1.0, false),
+    };
+    if animating {
+        ui.ctx().request_repaint();
+    }
     let bg = if selected {
         t.tool_active
     } else if resp.hovered() {
@@ -24,9 +41,11 @@ pub(crate) fn paint_icon_button_named(ui: &mut Ui, resp: Response, icon: &str, n
     } else {
         Color32::TRANSPARENT
     };
-    ui.painter().rect_filled(rect, CornerRadius::same(5), bg);
+    let draw_rect = if mag > 1.001 { egui::Rect::from_center_size(rect.center(), rect.size() * mag) } else { rect };
+    ui.painter().rect_filled(draw_rect, CornerRadius::same((5.0 * mag).round() as u8), bg);
     let pad = (size * 0.2).round();
-    icons::paint(ui, icon, rect.shrink(pad), if selected { t.text_strong } else { t.icon });
+    let icon_rect = egui::Rect::from_center_size(rect.center(), (rect.size() - vec2(pad * 2.0, pad * 2.0)) * mag);
+    icons::paint(ui, icon, icon_rect, if selected { t.text_strong } else { t.icon });
     resp.widget_info(|| icon_button_info(ui.is_enabled(), selected, name));
     if !tip.is_empty() { resp.on_hover_text(tip) } else { resp }
 }

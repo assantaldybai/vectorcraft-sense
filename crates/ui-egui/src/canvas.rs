@@ -434,6 +434,7 @@ pub fn show(app: &mut VectorcraftApp, ui: &mut Ui) {
         let overlays = selection_visuals(app, &painter, &xf, (hidden_chars, selection_marks, hover_still), revolve_edit, view_info);
         draw_overlays(&painter, &xf, &overlays, &t, HandleLook::of(&app.session.prefs), &mut shared_paths);
         app.canvas.shared_paths = shared_paths;
+        hud_measurement_overlay(app, ui, &painter, &xf, &overlays, &t);
         crate::panels::tabs::paint_stop_guide(app, &painter, &xf);
         // The tooltips say what a click does, so none shows where the click does something else:
         // while Space lends a view tool, or over an artboard's name.
@@ -1704,6 +1705,99 @@ fn selection_visuals(
         app.canvas.spelling = SpellingMarks::default();
     }
     overlays
+}
+
+/// The enlarged semi-transparent HUD measurement badge showing diameter/dimensions next to a
+/// created or selected shape, with mouse hover & scroll wheel/touchpad scaling.
+fn hud_measurement_overlay(app: &mut VectorcraftApp, ui: &mut egui::Ui, painter: &egui::Painter, xf: &Xf, overlays: &[Overlay], t: &Tokens) {
+    let active_measure = overlays.iter().find_map(|o| {
+        if let Overlay::Measure { p, text } = o {
+            Some((*p, text.clone()))
+        } else {
+            None
+        }
+    });
+
+    let shape_measure = if active_measure.is_none() {
+        if let Some(st) = app.session.active() {
+            if st.selection.len() == 1 {
+                let node_id = st.selection.objects[0];
+                if let Some(node) = st.doc.node(node_id) {
+                    if let Some(b) = node.geometric_bounds() {
+                        if b.width() > 0.01 && b.height() > 0.01 {
+                            let w = b.width();
+                            let h = b.height();
+                            let u = app.session.general_unit();
+                            let text = if (w - h).abs() < 1e-2 {
+                                format!("Ø {}", u.format(w))
+                            } else {
+                                format!("{} × {}", u.format(w), u.format(h))
+                            };
+                            let pt = Point::new(b.x1, b.y0);
+                            Some((pt, text))
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let Some((pt, raw_text)) = active_measure.or(shape_measure) else { return };
+    let display_text = if raw_text.starts_with("D: ") {
+        format!("Ø {}", &raw_text[3..])
+    } else {
+        raw_text
+    };
+
+    let sp = xf.to_screen(pt) + vec2(16.0, 10.0);
+    let multiline = display_text.contains('\n');
+    let font_size = if multiline { 16.0 } else { 22.0 };
+    let font_id = egui::FontId::proportional(font_size);
+    let galley = painter.layout_no_wrap(display_text, font_id, Color32::from_gray(245));
+    let badge_h = if multiline { 48.0 } else { 44.0 };
+    let badge_w = galley.size().x + 28.0;
+
+    let max_x = (xf.rect.right() - badge_w - 10.0).max(xf.rect.left() + 10.0);
+    let max_y = (xf.rect.bottom() - badge_h - 10.0).max(xf.rect.top() + 10.0);
+    let at_x = sp.x.clamp(xf.rect.left() + 10.0, max_x);
+    let at_y = sp.y.clamp(xf.rect.top() + 10.0, max_y);
+    let badge_rect = egui::Rect::from_min_size(pos2(at_x, at_y), vec2(badge_w, badge_h));
+
+    let hovered = ui.rect_contains_pointer(badge_rect);
+    let (bg, border) = if hovered {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
+        let scroll_y = ui.input(|i| i.smooth_scroll_delta.y);
+        if scroll_y.abs() > 0.05 && scroll_y.is_finite() {
+            ui.input_mut(|i| {
+                i.smooth_scroll_delta = egui::Vec2::ZERO;
+            });
+            let delta = (scroll_y as f64 * 0.003).clamp(-0.25, 0.25);
+            let sx = (1.0 + delta) * 100.0;
+            let _ = app.run("object.scale", json!({ "sx": sx, "sy": sx }));
+            app.sync_views();
+            ui.ctx().request_repaint();
+        }
+        (Color32::from_rgba_unmultiplied(28, 32, 44, 235), Stroke::new(1.5, t.accent))
+    } else {
+        (Color32::from_rgba_unmultiplied(18, 20, 28, 200), Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 45)))
+    };
+
+    painter.rect_filled(badge_rect, CornerRadius::same(10), bg);
+    painter.rect_stroke(badge_rect, CornerRadius::same(10), border, StrokeKind::Inside);
+    let text_pos = badge_rect.center() - galley.size() * 0.5;
+    painter.galley(text_pos, galley, Color32::from_gray(245));
 }
 
 #[cfg(test)]

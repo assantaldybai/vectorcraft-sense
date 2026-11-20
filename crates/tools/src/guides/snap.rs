@@ -135,7 +135,7 @@ impl PointSnap {
     }
 
     fn for_op(cx: &ToolContext, op: PixelOp, targets: impl FnOnce() -> Targets) -> Self {
-        let targets = if cx.snaps_to_pixel(op) || cx.snap_to_grid {
+        let targets = if cx.snap_to_grid {
             None
         } else if cx.smart_guides {
             // Snap to Point keeps pulling points onto the ruler guides with Smart Guides on (#812).
@@ -163,19 +163,24 @@ impl PointSnap {
     }
 
     /// Where a drawn point `p` leaving `from` goes ([`Targets::snap_from`]), and the guides
-    /// showing why. Pixels and the grid round it before Shift turns it onto its angle.
+    /// showing why. A magnetic target takes priority over pixel snapping; otherwise pixels and
+    /// the grid round it before Shift turns it onto its angle.
     pub fn snap_from(&self, cx: &ToolContext, p: Point, from: Option<&Leave>) -> (Point, Vec<Overlay>) {
         let keep = |q: Point| from.and_then(|f| f.constrained(q)).unwrap_or(q);
+        // Magnetic snap to targets (anchors, corners, ruler guides) takes priority
+        if let Some((t, tol)) = &self.targets {
+            let (q, ov) = t.snap_from(p, from, cx.tol(*tol));
+            if q != p || !ov.is_empty() {
+                return (q, ov);
+            }
+        }
         if cx.snaps_to_pixel(self.op) {
             return (keep(Point::new(p.x.round(), p.y.round())), vec![]);
         }
         if cx.snap_to_grid {
             return (keep(vectorcraft_geom::snap::snap_point_to_grid(p, cx.grid_step())), vec![]);
         }
-        match &self.targets {
-            Some((t, tol)) => t.snap_from(p, from, cx.tol(*tol)),
-            None => (keep(p), vec![]),
-        }
+        (keep(p), vec![])
     }
 
     /// Snap a bounding-box resize ([`Targets::snap_scale`]) as [`Self::snap`] snaps a point. With
@@ -199,16 +204,20 @@ impl PointSnap {
         } else {
             None
         };
+        // If smart targets (anchors, corners, ruler guides) are nearby, snap to them first without pixel rounding!
+        if let Some((t, tol)) = &self.targets {
+            let (scaled_a, guides) = t.snap_scale(bx, handle, a, proportional, from_center, cx.tol(*tol));
+            if scaled_a != a || !guides.is_empty() {
+                return (scaled_a, guides);
+            }
+        }
         if let Some(step) = step {
             let moved = Handle::ALL.map(|h| bx.to_doc() * (a * h.pos(bx.rect)));
             // Every point the handle moves is within half a step of a gridline, so a tolerance of
             // one step always finds one.
             return (Targets::grid_lines(moved, step).snap_scale(bx, handle, a, proportional, from_center, step).0, vec![]);
         }
-        match &self.targets {
-            Some((t, tol)) => t.snap_scale(bx, handle, a, proportional, from_center, cx.tol(*tol)),
-            None => (a, vec![]),
-        }
+        (a, vec![])
     }
 }
 

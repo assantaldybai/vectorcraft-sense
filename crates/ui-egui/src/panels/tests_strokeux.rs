@@ -333,3 +333,30 @@ fn the_arrow_keys_in_a_blank_weight_step_from_a_quarter_point() {
         }
     }
 }
+
+/// FreeHand Hairline preset in the Stroke Weight dropdown: choosing Hairline sets width to 0.0 pt,
+/// the field displays "Hairline", and typing "hairline" or "h" applies Hairline.
+#[test]
+fn freehand_hairline_preset_and_typing() {
+    let ctx = egui::Context::default();
+    crate::theme::install_fonts(&ctx);
+    let mut app = app_with_rect();
+    let t = texts(&ctx, &mut app, stroke::show);
+    let r = text_rect(&t, "Weight:");
+    let sp = ctx.global_style().spacing.item_spacing.x;
+    click(&ctx, &mut app, egui::pos2(r.right() + sp + 110.0, r.center().y), stroke::show);
+    let t = texts(&ctx, &mut app, stroke::show);
+    assert!(shows(&t, "Hairline"), "Hairline in preset dropdown: {t:?}");
+    click(&ctx, &mut app, text_rect(&t, "Hairline").center(), stroke::show);
+    assert_eq!(app.session.shown_stroke().unwrap().width, 0.0);
+    let t = texts(&ctx, &mut app, stroke::show);
+    assert!(shows(&t, "Hairline"), "field shows Hairline when weight is 0: {t:?}");
+
+    // Command accepts "hairline" as weight too.
+    run(&mut app, "stroke.set", json!({"weight": 2.0}));
+    assert_eq!(app.session.shown_stroke().unwrap().width, 2.0);
+    run(&mut app, "stroke.set", json!({"weight": "hairline"}));
+    assert_eq!(app.session.shown_stroke().unwrap().width, 0.0);
+    let t = texts(&ctx, &mut app, stroke::show);
+    assert!(shows(&t, "Hairline"), "field shows Hairline after command: {t:?}");
+}
